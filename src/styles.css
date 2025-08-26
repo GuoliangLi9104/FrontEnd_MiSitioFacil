@@ -1,0 +1,17 @@
+body { background: #0b1324; color: #e5e7eb; }
+.card { border-radius: 1rem; }
+.form-control, .form-select { border-radius: .75rem; }
+.btn { border-radius: .75rem; }
+.badge-template { background:#0ea5e9; }
+.preview-frame {
+  background: #0f172a;
+  border: 1px solid #1f2937;
+  border-radius: 1rem;
+  min-height: 360px;
+  padding: 1rem;
+}
+.brand-gradient {
+  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
