@@ -1,118 +1,291 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { api } from '../api'
-import TemplateCard from '../components/template-card.jsx'
-import ServiceForm from '../components/service-form.jsx'
-import ScheduleEditor from '../components/schedule-editor.jsx'
+// src/pages/builder.jsx
+import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { persist, debounce } from '../utils/persist'
+import ImagePicker from '../components/ImagePicker'
 
-const demoTemplates = [
-  { id:'classic', name:'Clásica', description:'Encabezado con imagen, sección de servicios y CTA de WhatsApp.', previewUrl:'https://picsum.photos/seed/classic/600/300' },
-  { id:'modern',  name:'Moderna', description:'Hero minimalista, tarjetas de servicios y pie con redes.', previewUrl:'https://picsum.photos/seed/modern/600/300' },
-  { id:'barber',  name:'Barbería', description:'Look oscuro, tipografías bold y bloque de reservas prominente.', previewUrl:'https://picsum.photos/seed/barber/600/300' }
-]
+const empty = {
+  business: {
+    slug: 'demo',
+    name: '',
+    category: '',
+    description: '',
+    phone: '',
+    address: '',
+    website: '',
+    instagram: '',
+    facebook: '',
+    coverUrl: ''      // <- aquí guardamos la dataURL de portada
+  },
+  services: []
+}
 
-export default function Builder(){
-  const navigate = useNavigate()
-  const token = localStorage.getItem('token')
-  const [business, setBusiness] = useState({
-    name:'', description:'', phone:'', address:'', templateId:'classic', slug:''
-  })
-  const [services, setServices] = useState([])
-  const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
+export default function Builder() {
+  const [model, setModel] = useState(empty)
+  const [savedAt, setSavedAt] = useState(null)
 
-  useEffect(()=>{
-    if(!token) navigate('/login')
-  },[token])
+  useEffect(() => {
+    const draft = persist.load()
+    if (draft) setModel(draft)
+  }, [])
 
-  const selectTpl = tpl => setBusiness(b => ({...b, templateId: tpl.id}))
-  const onSaveService = async (s) => {
-    if (!s.serviceId) {
-      const newItem = { ...s, id: crypto.randomUUID() }
-      setServices(prev => [...prev, newItem])
-    } else {
-      setServices(prev => prev.map(x => (x.id===s.serviceId || x.serviceId===s.serviceId) ? {...x, ...s} : x))
-    }
+  const autoSave = useMemo(
+    () => debounce((next) => { persist.save(next); setSavedAt(new Date()) }, 350),
+    []
+  )
+
+  const setModelAndSave = (updater) => {
+    setModel(prev => {
+      const next = structuredClone(prev)
+      updater(next)
+      autoSave(next)
+      return next
+    })
   }
-  const onDeleteService = async (id) => {
-    setServices(prev => prev.filter(x => (x.id||x.serviceId)!==id))
+
+  const update = (path, value) => {
+    setModelAndSave((next) => {
+      const parts = path.split('.')
+      let ref = next
+      for (let i = 0; i < parts.length - 1; i++) ref = ref[parts[i]]
+      ref[parts.at(-1)] = value
+    })
   }
 
-  const onSaveSchedule = async (row) => {
-    setMsg(`Horario guardado: día ${row.dayOfWeek}, ${row.startTime}-${row.endTime}`)
-    setTimeout(()=>setMsg(''),2500)
+  const addService = () => {
+    setModelAndSave((next) => {
+      next.services.push({
+        serviceId: crypto.randomUUID(),
+        title: '',
+        description: '',
+        price: 0,
+        durationMin: 30,
+        imageUrl: ''     // <- imagen opcional por servicio
+      })
+    })
   }
 
-  const saveAll = async () => {
-    try {
-      setSaving(true)
-      const slug = business.slug?.trim() || business.name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')
-      const payload = { ...business, slug, services }
-      const data = await api.saveBusiness(token, payload)
-      localStorage.setItem('ownerBusiness', JSON.stringify(data))
-      setMsg('¡Guardado!')
-      setTimeout(()=>setMsg(''),2500)
-    } catch(e) {
-      setMsg(e.message)
-    } finally {
-      setSaving(false)
-    }
+  const updateService = (id, field, value) => {
+    setModelAndSave((next) => {
+      const it = next.services.find(s => s.serviceId === id)
+      if (it) it[field] = value
+    })
   }
+
+  const removeService = (id) => {
+    setModelAndSave((next) => {
+      next.services = next.services.filter(s => s.serviceId !== id)
+    })
+  }
+
+  const clearAll = () => {
+    persist.clear()
+    setModel(empty)
+    setSavedAt(null)
+  }
+
+  const { business, services } = model
 
   return (
-    <div className="row g-4">
-      <div className="col-lg-6">
-        <div className="card p-3">
-          <h5 className="mb-3">Datos del negocio</h5>
-          <div className="row g-2">
-            <div className="col-md-6">
-              <label className="form-label">Nombre</label>
-              <input className="form-control" value={business.name} onChange={e=>setBusiness({...business, name:e.target.value})} required />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Teléfono/WhatsApp</label>
-              <input className="form-control" value={business.phone} onChange={e=>setBusiness({...business, phone:e.target.value})}/>
-            </div>
-            <div className="col-12">
-              <label className="form-label">Descripción</label>
-              <textarea className="form-control" rows="2" value={business.description} onChange={e=>setBusiness({...business, description:e.target.value})}></textarea>
-            </div>
-            <div className="col-md-8">
-              <label className="form-label">Dirección</label>
-              <input className="form-control" value={business.address} onChange={e=>setBusiness({...business, address:e.target.value})}/>
-            </div>
-            <div className="col-md-4">
-              <label className="form-label">Slug (URL)</label>
-              <input className="form-control" placeholder="ej. barberia-mario" value={business.slug} onChange={e=>setBusiness({...business, slug:e.target.value})}/>
-            </div>
+    <div className="vstack gap-3">
+      <div className="d-flex align-items-center justify-content-between">
+        <h4 className="m-0">Constructor</h4>
+        <div className="d-flex align-items-center gap-2">
+          <div className="small text-muted">
+            {savedAt ? `Guardado: ${savedAt.toLocaleTimeString()}` : '—'}
           </div>
+          <Link to="/preview" className="btn btn-brand btn-sm">
+            <i className="bi bi-eye me-1" /> Ver vista previa
+          </Link>
+          <button onClick={clearAll} className="btn btn-soft btn-sm">
+            <i className="bi bi-trash3 me-1" /> Limpiar borrador
+          </button>
         </div>
-
-        <div className="card p-3 mt-3">
-          <h5 className="mb-3">Plantillas</h5>
-          <div className="row g-3">
-            {demoTemplates.map(t => (
-              <div className="col-md-4" key={t.id}>
-                <TemplateCard tpl={t} selected={business.templateId===t.id} onSelect={selectTpl}/>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-3 d-flex gap-2">
-          <button className="btn btn-info" onClick={saveAll} disabled={saving}>{saving?'Guardando...':'Guardar todo'}</button>
-          <button className="btn btn-outline-light" onClick={()=>navigate('/preview',{ state:{ business, services } })}>Ver vista previa</button>
-        </div>
-        {msg && <div className="alert alert-secondary mt-2">{msg}</div>}
       </div>
 
-      <div className="col-lg-6">
-        <h5 className="mb-2">Servicios</h5>
-        <ServiceForm services={services} onSave={onSaveService} onDelete={onDeleteService} />
+      {/* Datos del negocio */}
+      <div className="card p-3">
+        <div className="row g-3">
+          <div className="col-md-3">
+            <label className="form-label">Slug (subdominio)</label>
+            <input
+              className="form-control"
+              value={business.slug}
+              onChange={(e) => update('business.slug', e.target.value.trim().toLowerCase())}
+              placeholder="ej. barberiaeclipse"
+            />
+          </div>
+          <div className="col-md-5">
+            <label className="form-label">Nombre del negocio</label>
+            <input
+              className="form-control"
+              value={business.name}
+              onChange={(e) => update('business.name', e.target.value)}
+              placeholder="Mi negocio profesional"
+            />
+          </div>
+          <div className="col-md-4">
+            <label className="form-label">Categoría</label>
+            <input
+              className="form-control"
+              value={business.category}
+              onChange={(e) => update('business.category', e.target.value)}
+              placeholder="Barbería, Repostería, etc."
+            />
+          </div>
 
-        <h5 className="mt-4 mb-2">Horarios disponibles</h5>
-        <ScheduleEditor onSave={onSaveSchedule}/>
-        <div className="small text-muted">Configura múltiples franjas por día (guárdalas una por una).</div>
+          <div className="col-12">
+            <label className="form-label">Descripción</label>
+            <textarea
+              className="form-control"
+              rows={3}
+              value={business.description}
+              onChange={(e) => update('business.description', e.target.value)}
+              placeholder="Describe tu propuesta de valor…"
+            />
+          </div>
+
+          <div className="col-md-4">
+            <label className="form-label">WhatsApp / Teléfono</label>
+            <input
+              className="form-control"
+              value={business.phone}
+              onChange={(e) => update('business.phone', e.target.value)}
+              placeholder="+506 8888 0000"
+            />
+          </div>
+          <div className="col-md-8">
+            <label className="form-label">Dirección</label>
+            <input
+              className="form-control"
+              value={business.address}
+              onChange={(e) => update('business.address', e.target.value)}
+              placeholder="Dirección pública"
+            />
+          </div>
+
+          <div className="col-md-6">
+            <label className="form-label">Website</label>
+            <input
+              className="form-control"
+              value={business.website}
+              onChange={(e) => update('business.website', e.target.value)}
+              placeholder="https://…"
+            />
+          </div>
+          <div className="col-md-3">
+            <label className="form-label">Instagram</label>
+            <input
+              className="form-control"
+              value={business.instagram}
+              onChange={(e) => update('business.instagram', e.target.value)}
+              placeholder="https://instagram.com/…"
+            />
+          </div>
+          <div className="col-md-3">
+            <label className="form-label">Facebook</label>
+            <input
+              className="form-control"
+              value={business.facebook}
+              onChange={(e) => update('business.facebook', e.target.value)}
+              placeholder="https://facebook.com/…"
+            />
+          </div>
+
+          {/* Subir imagen de portada */}
+          <div className="col-12">
+            <ImagePicker
+              label="Imagen de portada"
+              value={business.coverUrl}
+              onChange={(val) => update('business.coverUrl', val)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Servicios */}
+      <div className="card p-3">
+        <div className="d-flex justify-content-between align-items-center mb-2">
+          <h5 className="m-0">Servicios</h5>
+          <button onClick={addService} className="btn btn-brand btn-sm">
+            <i className="bi bi-plus-lg me-1" /> Agregar servicio
+          </button>
+        </div>
+
+        {services.length === 0 && (
+          <div className="text-muted">Aún no has agregado servicios.</div>
+        )}
+
+        <div className="row g-3">
+          {services.map((s) => (
+            <div className="col-12" key={s.serviceId}>
+              <div className="card p-3">
+                <div className="row g-2">
+                  <div className="col-md-4">
+                    <label className="form-label">Título</label>
+                    <input
+                      className="form-control"
+                      value={s.title}
+                      onChange={(e) => updateService(s.serviceId, 'title', e.target.value)}
+                      placeholder="Corte clásico"
+                    />
+                  </div>
+                  <div className="col-md-5">
+                    <label className="form-label">Descripción</label>
+                    <input
+                      className="form-control"
+                      value={s.description}
+                      onChange={(e) => updateService(s.serviceId, 'description', e.target.value)}
+                      placeholder="Detalle breve"
+                    />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">Precio (₡)</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={s.price}
+                      onChange={(e) => updateService(s.serviceId, 'price', Number(e.target.value))}
+                      min={0}
+                    />
+                  </div>
+                  <div className="col-md-1">
+                    <label className="form-label">Min</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={s.durationMin}
+                      onChange={(e) => updateService(s.serviceId, 'durationMin', Number(e.target.value))}
+                      min={5}
+                    />
+                  </div>
+
+                  {/* Imagen por servicio (opcional) */}
+                  <div className="col-12">
+                    <ImagePicker
+                      label="Imagen del servicio (opcional)"
+                      value={s.imageUrl}
+                      onChange={(val) => updateService(s.serviceId, 'imageUrl', val)}
+                      maxW={1200}
+                      maxH={800}
+                      maxMB={4}
+                    />
+                  </div>
+                </div>
+
+                <div className="d-flex justify-content-end mt-2">
+                  <button onClick={() => removeService(s.serviceId)} className="btn btn-soft btn-sm">
+                    <i className="bi bi-trash me-1" /> Quitar
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="small text-muted">
+        Consejo: sube tu imagen de portada, agrega servicios y abre <strong>Vista previa</strong>; no se perderá nada.
       </div>
     </div>
   )

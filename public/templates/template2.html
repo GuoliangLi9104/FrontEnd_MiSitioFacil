@@ -1,0 +1,28 @@
+<!-- Verde Clásico -->
+<div style="background:#f0fdf4; padding:28px; font-family:Georgia, serif;">
+  <h1 style="color:#065f46; margin:0;">Bienvenido a <em>{{business.name}}</em></h1>
+  <p style="margin:6px 0 18px 0;">📞 {{business.phone}} &nbsp;|&nbsp; ✉️ {{business.email}}</p>
+
+  {{#if business.coverUrl}}
+  <div style="border-radius:12px; overflow:hidden; margin-bottom:18px; width:100%; height:220px;
+              background-image:url('{{business.coverUrl}}'); background-size:cover; background-position:center;"></div>
+  {{/if}}
+
+  <section style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px;">
+    {{#each services}}
+    <div style="background:white; border-radius:10px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,.06);">
+      {{#if this.imageUrl}}
+        <div style="border-radius:10px; overflow:hidden; margin-bottom:10px; width:100%; height:140px;">
+          <img src="{{this.imageUrl}}" alt="service" style="width:100%; height:100%; object-fit:cover;" />
+        </div>
+      {{/if}}
+      <div style="font-weight:700; margin-bottom:4px;">{{this.title}}</div>
+      <div style="color:#334155; font-size:14px;">{{this.description}}</div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px;">
+        <span style="font-weight:700;">{{this.price}}</span>
+        <span style="font-size:12px; color:#64748b;">{{this.durationMin}} min</span>
+      </div>
+    </div>
+    {{/each}}
+  </section>
+</div>

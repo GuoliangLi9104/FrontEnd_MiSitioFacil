@@ -1,63 +1,138 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+// src/pages/booking.jsx
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 
-export default function Booking(){
+export default function Booking() {
   const { slug } = useParams()
-  const [data, setData] = useState(null)
-  const [serviceId, setServiceId] = useState('')
-  const [date, setDate] = useState('')
-  const [time, setTime] = useState('')
-  const [msg, setMsg] = useState('')
+  const { state } = useLocation()
+  const navigate = useNavigate()
 
-  useEffect(()=>{
-    (async ()=>{
+  const [services, setServices] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState('')
+
+  const [serviceId, setServiceId] = useState(state?.preselectedServiceId || '')
+  const [customerName, setCustomerName] = useState('')
+  const [when, setWhen] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
       try {
-        const res = await api.getBusinessBySlug(slug)
-        setData(res)
-      } catch(e) { setMsg(e.message) }
-    })()
-  },[slug])
-
-  const submit = async e => {
-    e.preventDefault()
-    try {
-      const payload = {
-        businessId: data.business.businessId,
-        serviceId,
-        dateTime: new Date(`${date}T${time}:00`),
+        const list = await api.getServicesBySlug(slug)
+        if (!alive) return
+        setServices(list)
+        if (!serviceId && list.length) setServiceId(list[0].serviceId)
+      } catch (e) {
+        setErr(e?.message || 'No se pudieron cargar servicios')
+      } finally {
+        if (alive) setLoading(false)
       }
-      const r = await api.createReservation(payload)
-      setMsg(`Reserva creada: ${r.reservationId || 'OK'}`)
-    } catch(e) { setMsg(e.message) }
+    })()
+    return () => { alive = false }
+  }, [slug])
+
+  const priceFmt = (n) => {
+    try {
+      return new Intl.NumberFormat('es-CR', { style: 'currency', currency: 'CRC', maximumFractionDigits: 0 }).format(Number(n || 0))
+    } catch {
+      return `₡${Number(n || 0).toFixed(0)}`
+    }
   }
 
-  if(!data) return <div>Cargando...</div>
+  const selected = useMemo(
+    () => services.find(s => s.serviceId === serviceId),
+    [services, serviceId]
+  )
+
+  const submit = async (e) => {
+    e.preventDefault()
+    try {
+      const r = await api.createBooking({ slug, serviceId, customerName, when })
+      alert(r.message || 'Reserva creada')
+      navigate(`/site/${slug}`)
+    } catch (e2) {
+      setErr(e2?.message || 'No se pudo crear la reserva')
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="card p-4">
+        <div className="placeholder-glow">
+          <h4 className="placeholder col-6"></h4>
+          <p className="placeholder col-10"></p>
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div className="card p-4">
-      <h5 className="mb-3">Reservar en {data.business.name}</h5>
-      <form className="row g-2" onSubmit={submit}>
-        <div className="col-md-6">
-          <label className="form-label">Servicio</label>
-          <select className="form-select" value={serviceId} onChange={e=>setServiceId(e.target.value)} required>
-            <option value="" disabled>Seleccione...</option>
-            {data.services?.map(s => <option key={s.serviceId} value={s.serviceId}>{s.title} — ₡{Number(s.price).toFixed(2)}</option>)}
-          </select>
+    <div className="row justify-content-center">
+      <div className="col-md-7">
+        <div className="card p-4">
+          <h4 className="mb-2">Reservar cita</h4>
+          <p className="text-muted">Elige un servicio y completa tus datos.</p>
+          {err && <div className="alert alert-danger">{err}</div>}
+
+          <form onSubmit={submit} className="vstack gap-3">
+            <div>
+              <label className="form-label">Servicio</label>
+              <select
+                className="form-select"
+                value={serviceId}
+                onChange={e => setServiceId(e.target.value)}
+                required
+              >
+                {services.map(s => (
+                  <option key={s.serviceId} value={s.serviceId}>
+                    {s.title} — {priceFmt(s.price)} · {s.durationMin} min
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="form-label">Tu nombre</label>
+              <input
+                className="form-control"
+                type="text"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder="Nombre y apellido"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="form-label">Fecha y hora</label>
+              <input
+                className="form-control"
+                type="datetime-local"
+                value={when}
+                onChange={e => setWhen(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="d-flex gap-2">
+              <button className="btn btn-brand" type="submit">
+                <i className="bi bi-check2-circle me-1" /> Confirmar
+              </button>
+              <button type="button" onClick={() => navigate(-1)} className="btn btn-soft">
+                Cancelar
+              </button>
+            </div>
+
+            {selected && (
+              <div className="small text-muted">
+                Seleccionado: <strong>{selected.title}</strong> — {priceFmt(selected.price)} · {selected.durationMin} min
+              </div>
+            )}
+          </form>
         </div>
-        <div className="col-md-3">
-          <label className="form-label">Fecha</label>
-          <input type="date" className="form-control" value={date} onChange={e=>setDate(e.target.value)} required />
-        </div>
-        <div className="col-md-3">
-          <label className="form-label">Hora</label>
-          <input type="time" className="form-control" value={time} onChange={e=>setTime(e.target.value)} required />
-        </div>
-        <div className="col-12 mt-2">
-          <button className="btn btn-info">Confirmar reserva</button>
-        </div>
-      </form>
-      {msg && <div className="alert alert-secondary mt-3">{msg}</div>}
+      </div>
     </div>
   )
 }

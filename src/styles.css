@@ -1,17 +1,146 @@
-body { background: #0b1324; color: #e5e7eb; }
-.card { border-radius: 1rem; }
-.form-control, .form-select { border-radius: .75rem; }
-.btn { border-radius: .75rem; }
-.badge-template { background:#0ea5e9; }
+:root {
+  --bg: #0b1324;
+  --panel: rgba(20, 26, 46, 0.7);
+  --panel-border: #1f2937;
+  --text: #ffffff; /* Cambiado a blanco puro */
+  --muted: #d1d5db; /* texto gris claro */
+  --brand1: #0ea5e9;
+  --brand2: #8b5cf6;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(1200px 800px at -10% -10%, rgba(14,165,233,.15), transparent 60%),
+    radial-gradient(900px 700px at 110% 10%, rgba(139,92,246,.12), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+}
+
+/* Utilidades */
+.container-narrow { max-width: 980px; }
+
+/* Tarjetas y paneles */
+.card {
+  border-radius: 1rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  backdrop-filter: blur(10px);
+  color: var(--text); /* fuerza texto blanco en tarjetas */
+}
+.card .card-header {
+  border-bottom: 1px solid var(--panel-border);
+}
+
+/* Inputs y botones */
+.form-control, .form-select {
+  border-radius: .75rem;
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  border-color: #2a3346;
+}
+.form-control:focus, .form-select:focus {
+  border-color: var(--brand1);
+  box-shadow: 0 0 0 .25rem rgba(14,165,233,0.15);
+}
+
+.btn {
+  border-radius: .75rem;
+  color: var(--text);
+}
+.btn-brand {
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand1), var(--brand2));
+  border: none;
+}
+.btn-brand:hover { filter: brightness(1.05); }
+
+.btn-soft {
+  background: rgba(255,255,255,.06);
+  border: 1px solid #2a3346;
+  color: var(--text);
+}
+.btn-soft:hover { background: rgba(255,255,255,.09); }
+
+/* Tipografía */
+.text-muted,
+.text-secondary,
+.small,
+.card-text,
+label,
+.form-label,
+.nav-link {
+  color: var(--muted) !important;
+}
+.text-muted { color: var(--muted) !important; }
+
+.brand-gradient {
+  background: linear-gradient(135deg, var(--brand1), var(--brand2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Navbar / Footer */
+.navbar-dark {
+  background: rgba(10, 16, 33, .6);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid #131a2e;
+}
+.navbar-dark .navbar-brand,
+.navbar-dark .nav-link,
+.navbar-dark .nav-link:focus,
+.navbar-dark .nav-link:hover {
+  color: white !important;
+}
+.site-footer {
+  border-top: 1px solid #131a2e;
+  background: rgba(10, 16, 33, .6);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+}
+
+/* Marcos de preview */
 .preview-frame {
   background: #0f172a;
   border: 1px solid #1f2937;
   border-radius: 1rem;
   min-height: 360px;
   padding: 1rem;
+  color: var(--text);
 }
-.brand-gradient {
-  background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+
+/* Secciones hero */
+.hero {
+  padding: 64px 0 40px;
+}
+.hero .kpi {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+}
+.hero .kpi .item {
+  background: rgba(255,255,255,.06);
+  border: 1px solid #2a3346;
+  border-radius: 1rem;
+  padding: 14px 16px;
+  text-align: center;
+  color: var(--text);
+}
+.hero h1 {
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+/* Mejor vista previa de portada */
+.cover-preview {
+  max-height: 220px;
+  object-fit: cover;
+  width: 100%;
+}
+
+/* Imagen de servicio en cards */
+.card img {
+  display: block;
 }
