@@ -1,7 +1,8 @@
 // src/pages/builder.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { persist, debounce } from '../utils/persist'
+import debounce from 'lodash.debounce'
+import { persist } from '../utils/persist'
 import ImagePicker from '../components/ImagePicker'
 
 const empty = {

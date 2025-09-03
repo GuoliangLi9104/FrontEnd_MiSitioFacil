@@ -1,28 +1,38 @@
 // src/utils/persist.js
-const KEY = 'msf_builder_draft_v1'
-
 export const persist = {
-  load() {
-    try {
-      const raw = localStorage.getItem(KEY)
-      return raw ? JSON.parse(raw) : null
-    } catch { return null }
+  keyForSlug(slug) { return `msf_site_${slug}` },
+
+  saveForSlug(slug, payload) {
+    localStorage.setItem(this.keyForSlug(slug), JSON.stringify(payload))
   },
-  save(data) {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(data))
-    } catch {}
+
+  loadForSlug(slug) {
+    const raw = localStorage.getItem(this.keyForSlug(slug))
+    if (!raw) return null
+    try { return JSON.parse(raw) } catch { return null }
   },
-  clear() {
-    try { localStorage.removeItem(KEY) } catch {}
-  }
+
+  removeForSlug(slug) { localStorage.removeItem(this.keyForSlug(slug)) },
+
+  listSites() {
+    return Object.keys(localStorage)
+      .filter(k => k.startsWith('msf_site_'))
+      .map(k => {
+        try {
+          const data = JSON.parse(localStorage.getItem(k)) || {}
+          const slug = data?.business?.slug || k.replace('msf_site_', '')
+          return { key:k, slug, name:data?.business?.name || slug, category:data?.business?.category || '' }
+        } catch {
+          const slug = k.replace('msf_site_', '')
+          return { key:k, slug, name:slug, category:'' }
+        }
+      })
+  },
+
+  // ==== ALIAS LEGACY (evita "persist.load is not a function") ====
+  load(slug) { return this.loadForSlug(slug) },
+  save(slug, payload) { return this.saveForSlug(slug, payload) },
+  remove(slug) { return this.removeForSlug(slug) },
 }
 
-// Pequeño debounce para no escribir en cada tecla
-export function debounce(fn, ms = 300) {
-  let t
-  return (...args) => {
-    clearTimeout(t)
-    t = setTimeout(() => fn(...args), ms)
-  }
-}
+if (typeof window !== 'undefined') window.__persist = persist

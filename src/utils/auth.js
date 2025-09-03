@@ -1,24 +1,63 @@
 // src/utils/auth.js
-// Auth "quemado" para desarrollo: guarda rol/owner en localStorage.
+// Manejo de sesión + helpers de demo/owner
+
+const AUTH_KEY = 'msf_auth';           // { token, user }
+const OWNER_KEY = 'msf_owner_business'; // businessId del propietario (owner)
+
 export function getAuthInfo() {
-  const role = localStorage.getItem('role') || 'client'; // 'admin' | 'owner' | 'client'
-  const businessId = localStorage.getItem('businessId') || null;
-  const email = localStorage.getItem('email') || (role === 'admin' ? 'admin@demo.com' : 'owner@demo.com');
-  const token = localStorage.getItem('token') || null; // opcional (para backend real)
-  return { role, businessId, email, token };
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return { token: '', user: null };
+    const { token = '', user = null } = JSON.parse(raw);
+    return { token, user };
+  } catch {
+    return { token: '', user: null };
+  }
 }
-export function devLoginAs(role = 'client', opts = {}) {
-  localStorage.setItem('role', role);
-  if (opts.businessId) localStorage.setItem('businessId', opts.businessId);
-  if (opts.email) localStorage.setItem('email', opts.email);
-  if (opts.token) localStorage.setItem('token', opts.token);
+
+export function setAuthInfo(token, user) {
+  const data = { token: String(token || ''), user: user || null };
+  localStorage.setItem(AUTH_KEY, JSON.stringify(data));
+  return data;
 }
+
+export function clearAuth() {
+  localStorage.removeItem(AUTH_KEY);
+}
+
+export function isLoggedIn() {
+  const { token } = getAuthInfo();
+  return !!token;
+}
+
+// ---------- Owner helpers ----------
 export function setOwnerBusinessId(businessId) {
-  localStorage.setItem('businessId', businessId);
+  if (!businessId) return;
+  localStorage.setItem(OWNER_KEY, String(businessId));
 }
-export function logoutDev() {
-  localStorage.removeItem('token');
-  localStorage.setItem('role', 'client');
-  localStorage.removeItem('businessId');
-  localStorage.removeItem('email');
+
+export function getOwnerBusinessId() {
+  return localStorage.getItem(OWNER_KEY) || '';
+}
+
+export function clearOwnerBusinessId() {
+  localStorage.removeItem(OWNER_KEY);
+}
+
+/**
+ * devLoginAs(role, extraUser?)
+ * Inicia sesión “de demo” con un rol específico (admin/owner/user)
+ * Útil para pantallas de creación cuando aún no hay backend.
+ */
+export function devLoginAs(role = 'user', extraUser = {}) {
+  const baseUser = {
+    id: extraUser.id || crypto.randomUUID?.() || String(Date.now()),
+    name: extraUser.name || (role === 'admin' ? 'Admin Demo' : role === 'owner' ? 'Owner Demo' : 'Usuario Demo'),
+    email: extraUser.email || (role === 'admin' ? 'admin@demo.com' : role === 'owner' ? 'owner@demo.com' : 'user@demo.com'),
+    role,
+    ...extraUser
+  };
+  const token = `demo.${btoa(baseUser.email)}.${Date.now()}`;
+  setAuthInfo(token, baseUser);
+  return { token, user: baseUser, source: 'dev' };
 }

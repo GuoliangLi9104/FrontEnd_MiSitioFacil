@@ -1,6 +1,6 @@
-
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/(.*)", "destination": "https://misitiofacil-backend.vercel.app/api/$1" },
+    { "source": "/((?!api|_next/static|_next/image|favicon.ico|assets|fonts|images).*)", "destination": "/index.html" }
   ]
 }

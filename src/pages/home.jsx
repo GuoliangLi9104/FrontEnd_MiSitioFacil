@@ -1,80 +1,118 @@
-// src/pages/home.jsx  (añade demo: seed + login rápido)
+// src/pages/home.jsx
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api'
-import { getAuthInfo, devLoginAs } from '../utils/auth'
-import { seedDemo } from '../utils/seed'
 
-export default function Home(){
-  const [biz, setBiz] = useState([])
-  const [info, setInfo] = useState(getAuthInfo())
-  const [seeded, setSeeded] = useState(false)
+// Hero minimalista tipo startup
+function Hero() {
+  return (
+    <div className="card border-0 mb-4" style={{
+      background: 'radial-gradient(1200px 400px at 10% -20%, rgba(99,102,241,.25), transparent), radial-gradient(1200px 400px at 110% 120%, rgba(14,165,233,.25), transparent)',
+      overflow: 'hidden'
+    }}>
+      <div className="p-4 p-md-5">
+        <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+          <div>
+            <h1 className="mb-2">Crea sitios modernos <span className="brand-gradient">en minutos</span></h1>
+            <p className="text-muted m-0">
+              MiSitioFácil te permite generar páginas profesionales, conectar dominio y publicar con un clic.
+            </p>
+          </div>
+          <div className="d-flex gap-2">
+            <Link className="btn btn-brand" to="/create"><i className="bi bi-magic me-1" /> Crear página</Link>
+            <Link className="btn btn-soft" to="/templates"><i className="bi bi-grid me-1" /> Ver plantillas</Link>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
 
-  useEffect(()=>{
-    (async ()=>{
-      const data = await api.adminListBusinesses()
-      const items = data.items || []
-      if (items.length === 0 && !seeded) {
-        seedDemo({ makeAdmin:false })
-        const data2 = await api.adminListBusinesses()
-        setBiz(data2.items || [])
-        setSeeded(true)
-      } else {
-        setBiz(items)
-      }
+export default function Home() {
+  const [sites, setSites] = useState([])
+
+  useEffect(() => {
+    (async () => {
+      const list = await api.listLocalSites()
+      setSites(list)
     })()
-  },[seeded])
+  }, [])
 
-  const loginAs = (role) => {
-    if (role === 'admin') seedDemo({ makeAdmin:true })
-    if (role === 'owner') seedDemo({ makeAdmin:false })
-    if (role === 'client') devLoginAs('client', {})
-    setInfo(getAuthInfo())
-    window.location.reload()
+  const createDemo = () => {
+    const payload = {
+      business: {
+        slug: 'demo-barber',
+        name: 'Barbería Aurora',
+        category: 'Barbería',
+        description: 'Cortes modernos y clásicos con atención premium.',
+        phone: '+506 8888 0000',
+        address: 'San Isidro, San Carlos',
+        website: '',
+        instagram: '',
+        facebook: '',
+        coverUrl: ''
+      },
+      services: [
+        { serviceId: crypto.randomUUID(), title: 'Corte clásico', description: 'Tijera y máquina', price: 4500, durationMin: 30 }
+      ]
+    }
+    localStorage.setItem('msf_site_demo-barber', JSON.stringify(payload))
+    setSites(s => {
+      const exist = s.some(x => x.slug === 'demo-barber')
+      return exist ? s : [...s, { slug:'demo-barber', name:'Barbería Aurora', category:'Barbería', key:'msf_site_demo-barber' }]
+    })
   }
 
-  const demo = biz.find(b => b.slug === 'demo-barber')
   return (
-    <div className="container py-3">
-      <h3 className="mb-3">Inicio</h3>
+    <div className="container-xxl">
+      <Hero />
 
-      <div className="alert alert-secondary">
-        <strong>Modo Demo:</strong> Crea y prueba datos reales en localStorage.
-        <div className="mt-2 d-flex gap-2">
-          <button className="btn btn-sm btn-outline-dark" onClick={()=>loginAs('client')}>Entrar como Cliente</button>
-          <button className="btn btn-sm btn-outline-primary" onClick={()=>loginAs('owner')}>Entrar como Owner (demo)</button>
-          <button className="btn btn-sm btn-outline-warning" onClick={()=>loginAs('admin')}>Entrar como Admin (demo)</button>
-        </div>
-        <div className="mt-2">
-          {demo && (
-            <>
-              <span className="me-2">Página demo: </span>
-              <Link to={`/site/${demo.slug}`} className="btn btn-sm btn-link">/site/{demo.slug}</Link>
-              <Link to="/owner" className="btn btn-sm btn-link">Mi Página (owner)</Link>
-              <Link to="/admin" className="btn btn-sm btn-link">Admin</Link>
-            </>
-          )}
+      <div className="card p-3 mb-4">
+        <div className="d-flex align-items-center justify-content-between">
+          <div className="text-muted">Modo demo: guarda contenido en tu navegador (localStorage).</div>
+          <div className="d-flex gap-2">
+            <button className="btn btn-outline-warning btn-sm" onClick={createDemo}>
+              <i className="bi bi-lightning-charge me-1" /> Crear demo rápida
+            </button>
+            <Link className="btn btn-soft btn-sm" to="/preview">Vista previa</Link>
+          </div>
         </div>
       </div>
 
-      <div className="card p-3">
-        <h5 className="mb-2">Páginas existentes</h5>
+      <div className="card">
+        <div className="p-3 border-bottom"><strong>Páginas existentes</strong></div>
         <div className="table-responsive">
-          <table className="table table-sm align-middle">
-            <thead><tr><th>Nombre</th><th>Slug</th><th>Categoría</th><th>Link</th></tr></thead>
+          <table className="table table-dark table-hover align-middle m-0">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Slug</th>
+                <th>Categoría</th>
+                <th style={{width: 160}}>Acciones</th>
+              </tr>
+            </thead>
             <tbody>
-              {biz.map(b=>(
-                <tr key={b.id || b._id}>
-                  <td>{b.name}</td>
-                  <td>{b.slug}</td>
-                  <td>{b.category || '-'}</td>
-                  <td><Link to={`/site/${b.slug}`}>Ver pública</Link></td>
+              {sites.length === 0 && (
+                <tr><td colSpan={4} className="text-muted p-4">Aún no hay páginas en este navegador.</td></tr>
+              )}
+              {sites.map(s => (
+                <tr key={s.key}>
+                  <td>{s.name}</td>
+                  <td><code>{s.slug}</code></td>
+                  <td>{s.category}</td>
+                  <td className="d-flex gap-2">
+                    <Link className="btn btn-brand btn-sm" to={`/site/${s.slug}`}>Ver pública</Link>
+                    <Link className="btn btn-soft btn-sm" to="/builder">Editar</Link>
+                  </td>
                 </tr>
               ))}
-              {biz.length===0 && <tr><td colSpan={4} className="text-muted">Sin páginas todavía</td></tr>}
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="text-center text-muted small mt-4">
+        © {new Date().getFullYear()} MiSitioFácil — Hecho con <span className="text-danger">❤</span>
       </div>
     </div>
   )
