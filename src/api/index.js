@@ -61,6 +61,7 @@ export const api = {
   // ==== ALIAS LEGACY (evita "api.getPublicSite is not a function") ====
   async getBusinessBySlug(slug) { return this.getPublicSite(slug) },
 }
+export * from '../api.js';
 
 // export named y default
 export default api

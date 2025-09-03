@@ -1,7 +1,7 @@
 // src/pages/publicsite.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api } from '../api'
+import { api } from '../api.js'
 import PublishControl from '../components/PublishControl.jsx'
 
 export default function PublicSite() {

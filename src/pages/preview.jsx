@@ -1,7 +1,7 @@
 // src/pages/preview.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '../api'
+import { api } from '../api.js'
 
 function PreviewCanvas({ slug }) {
   const [data, setData] = useState(null)
@@ -35,9 +35,9 @@ function PreviewCanvas({ slug }) {
           {business?.category && <div className="text-muted small">{business.category}</div>}
         </div>
         <button className="btn btn-brand btn-sm" onClick={async ()=>{
-          const r = await api.publishFromLocal(slug)
-          alert(r?.source === 'local' ? 'Guardado localmente (sin backend).' : 'Publicado en backend.')
-        }}>Publicar página</button>
+   const r = await api.publishSelection(slug)
+   alert(r?.source === 'local' ? 'Guardado localmente (sin backend).' : 'Publicado en backend.')
+ }}>Publicar página</button>
       </div>
 
       <div className="card p-3 mb-3">

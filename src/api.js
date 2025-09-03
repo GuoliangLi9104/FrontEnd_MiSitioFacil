@@ -5,13 +5,10 @@ import { devstore } from './utils/devstore'
 import { getAuthInfo, setAuthInfo } from './utils/auth'
 
 // ------- Config -------
-const FORCE_DEMO = import.meta.env.VITE_FORCE_DEMO === '1'
-
-const IS_LOCAL = typeof window !== 'undefined' && window.location?.host?.includes('localhost:5173')
+// Si no defines VITE_API_URL (prod), en dev caerá a '/api' para usar el proxy de Vite.
 const RAW_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '')
-const BASE = IS_LOCAL ? '/api' : (RAW_BASE || '/api')
-
-export const BACKEND_CONFIGURED = !!BASE && !FORCE_DEMO
+const BASE = RAW_BASE || '/api'
+export const BACKEND_CONFIGURED = !!BASE
 
 const norm = s => String(s || '').trim().toLowerCase()
 
@@ -27,7 +24,6 @@ function buildUrl(base, path) {
  * - Si necesitas token en GET, pasa { auth:true }
  */
 async function http(path, { method = 'GET', body, headers, auth = false } = {}) {
-  if (!BACKEND_CONFIGURED) throw new Error('Backend no configurado')
   const url = buildUrl(BASE, (path || '').trim())
 
   const hasBody = body != null
@@ -53,7 +49,12 @@ async function http(path, { method = 'GET', body, headers, auth = false } = {}) 
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
-    try { const dj = await res.json(); msg = dj.message || dj.error || msg } catch {}
+    try {
+      const dj = await res.json()
+      msg = dj.message || dj.error || msg
+    } catch {
+      // noop
+    }
     throw new Error(msg)
   }
   try { return await res.json() } catch { return {} }
@@ -134,64 +135,61 @@ const filterServicesRespectingSelection = (services=[]) =>
 export const api = {
   // ---------- AUTH ----------
   async register({ name, fullName, email, password }) {
-  const realName = name || fullName || (email ? email.split('@')[0] : 'Usuario')
-  try {
-    const rsp = await http('/auth/register', {
-      method: 'POST',
-      body: { name: realName, email, password },
-      auth: false
-    })
+    const realName = name || fullName || (email ? email.split('@')[0] : 'Usuario')
+    try {
+      const rsp = await http('/auth/register', {
+        method: 'POST',
+        body: { fullName: realName, email, password },
+        auth: false
+      })
 
-    const token = rsp?.token ?? rsp?.data?.token
-    const backendUser = rsp?.user ?? rsp?.data?.user
-    if (!token) throw new Error(rsp?.error || rsp?.message || 'Registro inválido (sin token)')
+      const token = rsp?.token ?? rsp?.data?.token
+      const backendUser = rsp?.user ?? rsp?.data?.user
+      if (!token) throw new Error(rsp?.error || rsp?.message || 'Registro inválido (sin token)')
 
-    const user = backendUser || { name: realName, email, role: 'owner' }
-    setAuthInfo(token, user)
-    return { ok: true, token, user, source: 'backend' }
-  } catch (e) {
-    const msg = String(e?.message || e || '')
-    // 🔁 Fallback local si el backend no está listo
-    if (/database not configured|service unavailable|503/i.test(msg)) {
-      const token = `demo.${btoa(email)}.${Date.now()}`
-      const user = { name: realName, email, role: 'owner', _warning: 'fallback-local' }
+      const user = backendUser || { name: realName, email, role: 'owner' }
       setAuthInfo(token, user)
-      return { ok: true, token, user, source: 'fallback' }
+      return { ok: true, token, user, source: 'backend' }
+    } catch (e) {
+      const msg = String(e?.message || e || '')
+      if (/database not configured|service unavailable|503/i.test(msg)) {
+        const token = `demo.${btoa(email)}.${Date.now()}`
+        const user = { name: realName, email, role: 'owner', _warning: 'fallback-local' }
+        setAuthInfo(token, user)
+        return { ok: true, token, user, source: 'fallback' }
+      }
+      throw e
     }
-    throw e
-  }
-},
+  },
 
-async login({ email, password }) {
-  try {
-    const rsp = await http('/auth/login', {
-      method: 'POST',
-      body: { email, password },
-      auth: false
-    })
+  async login({ email, password }) {
+    try {
+      const rsp = await http('/auth/login', {
+        method: 'POST',
+        body: { email, password },
+        auth: false
+      })
 
-    const token = rsp?.token ?? rsp?.data?.token
-    const backendUser = rsp?.user ?? rsp?.data?.user
-    if (!token) throw new Error(rsp?.error || rsp?.message || 'Login inválido (sin token)')
+      const token = rsp?.token ?? rsp?.data?.token
+      const backendUser = rsp?.user ?? rsp?.data?.user
+      if (!token) throw new Error(rsp?.error || rsp?.message || 'Login inválido (sin token)')
 
-    const role = backendUser?.role || 'owner'
-    const user = { ...(backendUser || { email }), role }
-    setAuthInfo(token, user)
-    return { ok: true, token, user, source: 'backend' }
-  } catch (e) {
-    const msg = String(e?.message || e || '')
-    // 🔁 Fallback local si el backend no responde por 503 / DB no configurada
-    if (/database not configured|service unavailable|503/i.test(msg)) {
-      const role = (email === 'admin@demo.com') ? 'admin' : (email === 'owner@demo.com') ? 'owner' : 'user'
-      const token = `demo.${btoa(email)}.${Date.now()}`
-      const user = { name: email.split('@')[0], email, role, _warning: 'fallback-local' }
+      const role = backendUser?.role || 'owner'
+      const user = { ...(backendUser || { email }), role }
       setAuthInfo(token, user)
-      return { ok: true, token, user, source: 'fallback' }
+      return { ok: true, token, user, source: 'backend' }
+    } catch (e) {
+      const msg = String(e?.message || e || '')
+      if (/database not configured|service unavailable|503/i.test(msg)) {
+        const role = (email === 'admin@demo.com') ? 'admin' : (email === 'owner@demo.com') ? 'owner' : 'user'
+        const token = `demo.${btoa(email)}.${Date.now()}`
+        const user = { name: email.split('@')[0], email, role, _warning: 'fallback-local' }
+        setAuthInfo(token, user)
+        return { ok: true, token, user, source: 'fallback' }
+      }
+      throw e
     }
-    throw e
-  }
-},
-
+  },
 
   async me() {
     if (BACKEND_CONFIGURED) {
@@ -205,25 +203,16 @@ async login({ email, password }) {
   },
 
   // ---------- BUSINESS ----------
-  /**
-   * createBusiness({ name, slug, category, description, phone, address })
-   * Backend: POST /business -> { id/_id/businessId, ... }
-   * DEMO: crea draft local y devuelve { id, slug, ... }
-   */
   async createBusiness(payload) {
     const nslug = norm(payload.slug || payload.name || `negocio-${Date.now()}`)
-    const body = {
-      ...payload,
-      slug: nslug
-    }
+    const body = { ...payload, slug: nslug }
 
     if (BACKEND_CONFIGURED) {
-      // POST -> preflight (backend debe contestar OPTIONS 200)
       const rsp = await http('/business', { method: 'POST', body, auth: true })
       return rsp
     }
 
-    // DEMO local: crea un draft vacío con business
+    // DEMO local
     const id = crypto.randomUUID?.() || String(Date.now())
     const draft = {
       business: {
@@ -241,22 +230,88 @@ async login({ email, password }) {
       services: []
     }
     saveDraftLocal(nslug, draft)
-
-    // índice simple de negocios
     try {
       const idx = JSON.parse(localStorage.getItem(bizIdxKey) || '[]')
       idx.push({ id, slug: nslug, name: draft.business.name })
       localStorage.setItem(bizIdxKey, JSON.stringify(idx))
     } catch {}
-
     return { ok: true, id, slug: nslug, ...draft.business, source: 'local' }
+  },
+
+  // 🔹 listar SOLO mis negocios (owner)
+  async listMyBusinesses() {
+    if (BACKEND_CONFIGURED) {
+      return await http('/business', { method: 'GET', auth: true })
+    }
+    // Fallback demo: lista localStorage
+    return { items: listLocalSites() }
+  },
+
+  // 🔹 listar TODOS (admin)
+  async listAllBusinesses() {
+    if (BACKEND_CONFIGURED) {
+      return await http('/business?all=1', { method: 'GET', auth: true })
+    }
+    // Fallback demo: usa lo mismo que local
+    return { items: listLocalSites() }
+  },
+
+  // 🔹 actualizar negocio
+  async updateBusiness(id, payload) {
+    if (BACKEND_CONFIGURED) {
+      return await http(`/business/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: payload,
+        auth: true
+      })
+    }
+    // Fallback demo (best-effort): si existe draft, lo parchea
+    const slug = norm(payload?.slug)
+    if (slug) {
+      const d = loadDraft(slug) || { business: { slug }, services: [] }
+      d.business = { ...d.business, ...payload, slug }
+      saveDraftLocal(slug, d)
+      return { ok: true, item: d.business, source: 'local' }
+    }
+    return { ok: false, message: 'Sin backend y sin slug para actualizar' }
+  },
+
+  // 🔹 eliminar negocio
+  async deleteBusiness(id) {
+    if (BACKEND_CONFIGURED) {
+      return await http(`/business/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        auth: true
+      })
+    }
+    // Fallback demo: intenta borrar por slug en el índice
+    try {
+      const idx = JSON.parse(localStorage.getItem(bizIdxKey) || '[]')
+      const rest = idx.filter(x => (x.id !== id))
+      localStorage.setItem(bizIdxKey, JSON.stringify(rest))
+      return { ok: true, source: 'local' }
+    } catch {
+      return { ok: false, message: 'No se pudo eliminar en modo demo' }
+    }
+  },
+
+  // 🔹 activar / desactivar (solo admin)
+  async setBusinessStatus(id, enabled) {
+    if (BACKEND_CONFIGURED) {
+      return await http(`/business/${encodeURIComponent(id)}/status`, {
+        method: 'PATCH',
+        body: { enabled: !!enabled },
+        auth: true
+      })
+    }
+    // Fallback demo: sin efecto real
+    return { ok: true, source: 'local', noop: true }
   },
 
   // ---------- PING ----------
   async ping() {
-    if (!BACKEND_CONFIGURED) return { ok:false, backend:false, message:'Backend no configurado' }
     try {
-      const res = await http('/', { method: 'GET', auth: false })
+      const res = await http('/health', { method: 'GET', auth: false })
       return { ok:true, backend:true, info:res }
     } catch (e) {
       return { ok:false, backend:false, message: String(e?.message || e) }
@@ -267,7 +322,8 @@ async login({ email, password }) {
   async getPublicSite(slug){
     const nslug = norm(slug)
     if (BACKEND_CONFIGURED) {
-      const r = await http(`/site/${encodeURIComponent(nslug)}`, { method:'GET', auth:false })
+      // Ajustado al backend: usamos /templates/:slug (antes /site/:slug)
+      const r = await http(`/templates/${encodeURIComponent(nslug)}`, { method:'GET', auth:false })
       return _normalizeSite(r, nslug)
     }
     const published = loadPublished(nslug)
@@ -309,7 +365,9 @@ async login({ email, password }) {
         business,
         services: services.map(s => pick(s, ['serviceId','title','description','price','durationMin']))
       }
-      const res = await http('/publish', { method:'POST', body: payload, auth:true })
+
+      // Ajustado al backend: antes '/publish', ahora '/templates/publish'
+      const res = await http('/templates/publish', { method:'POST', body: payload, auth:true })
       return res
     }
 
@@ -336,7 +394,8 @@ async login({ email, password }) {
   async createBooking(slug, payload) {
     const nslug = norm(slug)
     if (BACKEND_CONFIGURED) {
-      const res = await http('/booking', { method:'POST', body: { slug: nslug, ...payload }, auth:true })
+      // Ajuste al naming del backend: normalmente '/reservations'
+      const res = await http('/reservations', { method:'POST', body: { slug: nslug, ...payload }, auth:true })
       return res
     }
     const booking = {
@@ -356,7 +415,7 @@ async login({ email, password }) {
 
   // ---------- EDIT DRAFT ----------
   saveLocalDraft(slug, draft) { return saveDraftLocal(slug, draft) },
-  updateBusinessDraft(slug, patch) { 
+  updateBusinessDraft(slug, patch) {
     const nslug = norm(slug)
     const d = loadDraft(nslug)
     if (!d) throw new Error(`No hay draft local para "${nslug}"`)

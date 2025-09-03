@@ -1,6 +1,6 @@
 // src/components/PublishButton.jsx
 import { useState } from 'react'
-import { api } from '../api'
+import { api } from '../api.js'
 import { buildPublicUrl } from '../utils/host'
 
 export default function PublishButton({ slug, openAfter = true, className = '' }) {
@@ -11,7 +11,7 @@ export default function PublishButton({ slug, openAfter = true, className = '' }
     if (!slug) { setStatus('error'); setMsg('Falta slug'); return }
     setStatus('loading'); setMsg('')
     try {
-      const res = await api.publishFromLocal(slug)
+      const res = await api.publishSelection(slug) // → POST /api/templates/publish
       setStatus('ok')
       setMsg(res?.source === 'local' ? 'Guardado local.' : 'Publicado en backend.')
       if (openAfter) {

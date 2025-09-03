@@ -1,6 +1,6 @@
 // src/components/PublishControl.jsx
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api } from '../api.js'
 import { buildPublicUrl } from '../utils/host'
 
 export default function PublishControl({ slug, className = '' }) {

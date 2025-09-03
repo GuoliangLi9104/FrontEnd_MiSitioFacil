@@ -1,7 +1,7 @@
 // src/pages/booking.jsx
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { api } from '../api'
+import { api } from '../api.js'
 
 const fmtLocal = (iso) => {
   try {
