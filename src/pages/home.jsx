@@ -164,10 +164,6 @@ export default function Home() {
           </table>
         </div>
       </div>
-
-      <div className="text-center text-muted small mt-4">
-        © {new Date().getFullYear()} MiSitioFácil — Hecho con <span className="text-danger">❤</span>
-      </div>
     </div>
   )
 }

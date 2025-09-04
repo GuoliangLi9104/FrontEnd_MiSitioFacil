@@ -1,28 +1,41 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api } from '../api.js'
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api } from "../api.js";
 
-export default function Register(){
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail]       = useState('')
-  const [password, setPassword] = useState('')
-  const [loading,setLoading]    = useState(false)
-  const [err,setErr]            = useState('')
-  const navigate = useNavigate()
+export default function Register() {
+  const [fullName, setFullName]   = useState("");
+  const [email, setEmail]         = useState("");
+  const [password, setPassword]   = useState("");
+  const [loading, setLoading]     = useState(false);
+  const [err, setErr]             = useState("");
+  const navigate = useNavigate();
 
-  const submit = async e => {
-    e.preventDefault()
-    setLoading(true); setErr('')
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErr("");
+
     try {
-      const data = await api.register({ fullName, email, password })
-      localStorage.setItem('token', data.token)
-      navigate('/builder')
+      // No asumimos que el BE devuelve token.
+      const res = await api.register({ fullName, email, password });
+
+      // Si el BE devuelve token, entramos directo; si no, vamos al login.
+      if (res?.token) {
+        localStorage.setItem("token", res.token); // redundante si api ya lo guardó, pero seguro
+        navigate("/", { replace: true });
+      } else {
+        navigate("/login?registered=1", { replace: true });
+      }
     } catch (error) {
-      setErr(error.message || 'No se pudo registrar')
+      const msg =
+        error?.message ||
+        error?.response?.data?.message ||
+        "No se pudo registrar";
+      setErr(msg);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <div className="row justify-content-center">
@@ -37,7 +50,7 @@ export default function Register(){
               type="text"
               placeholder="Nombre completo"
               value={fullName}
-              onChange={e=>setFullName(e.target.value)}
+              onChange={(e) => setFullName(e.target.value)}
               required
             />
             <input
@@ -45,7 +58,7 @@ export default function Register(){
               type="email"
               placeholder="Correo"
               value={email}
-              onChange={e=>setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
             <input
@@ -53,12 +66,12 @@ export default function Register(){
               type="password"
               placeholder="Contraseña (mín. 6)"
               value={password}
-              onChange={e=>setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               minLength={6}
               required
             />
             <button className="btn btn-brand" disabled={loading}>
-              {loading ? 'Creando…' : 'Crear cuenta'}
+              {loading ? "Creando…" : "Crear cuenta"}
             </button>
             <div className="text-muted small">
               ¿Ya tienes cuenta? <Link to="/login">Inicia sesión</Link>
@@ -67,5 +80,5 @@ export default function Register(){
         </div>
       </div>
     </div>
-  )
+  );
 }

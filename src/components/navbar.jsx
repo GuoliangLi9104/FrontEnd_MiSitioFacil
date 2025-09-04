@@ -1,65 +1,59 @@
-import { Link, NavLink, useNavigate } from 'react-router-dom'
+// src/components/navbar.jsx
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { getAuthInfo, setAuthInfo } from '../utils/auth'
 
 export default function Navbar() {
+  const [user, setUser] = useState(getAuthInfo()?.user || null)
+  const location = useLocation()
   const navigate = useNavigate()
-  const token = localStorage.getItem('token')
+
+  useEffect(() => {
+    setUser(getAuthInfo()?.user || null)
+  }, [location.pathname])
+
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.key === 'msf_auth') setUser(getAuthInfo()?.user || null)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const logout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('ownerBusiness')
-    navigate('/login')
+    try { setAuthInfo(null, null) } catch {}
+    try { localStorage.removeItem('msf_auth') } catch {}
+    navigate('/login', { replace: true }) // ⬅️ envía a Login
   }
 
+  const label = user?.email || user?.fullName || user?.name || ''
+
   return (
-    <nav className="navbar navbar-expand-lg navbar-dark sticky-top">
-      <div className="container">
-        <Link className="navbar-brand fw-bold d-flex align-items-center gap-2" to="/">
-          <i className="bi bi-stars"></i>
-          <span className="brand-gradient">MiSitioFácil</span>
+    <nav className="navbar navbar-dark bg-dark border-bottom border-secondary">
+      <div className="container d-flex align-items-center justify-content-between">
+        <Link className="navbar-brand d-flex align-items-center gap-2" to="/">
+          <i className="bi bi-stars" />
+          <span className="brand-gradient fw-semibold">MiSitioFácil</span>
         </Link>
 
-        <button
-          className="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#mainNav"
-          aria-controls="mainNav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span className="navbar-toggler-icon"></span>
-        </button>
+        <ul className="navbar-nav flex-row gap-3">
+          <li className="nav-item">
+            <Link className="nav-link text-light fw-semibold" to="/">Inicio</Link>
+          </li>
+        </ul>
 
-        <div id="mainNav" className="collapse navbar-collapse">
-          <ul className="navbar-nav me-auto mb-2 mb-lg-0">
-            <li className="nav-item"><NavLink className="nav-link" to="/">Inicio</NavLink></li>
-            <li className="nav-item"><NavLink className="nav-link" to="/site/demo">Demo</NavLink></li>
-            {token && (
-              <>
-                <li className="nav-item"><NavLink className="nav-link" to="/builder">Constructor</NavLink></li>
-                <li className="nav-item"><NavLink className="nav-link" to="/preview">Vista previa</NavLink></li>
-              </>
-            )}
-          </ul>
-
-          <ul className="navbar-nav ms-auto">
-            {!token ? (
-              <>
-                <li className="nav-item"><NavLink className="nav-link" to="/login">Entrar</NavLink></li>
-                <li className="nav-item">
-                  <NavLink className="btn btn-brand btn-sm ms-lg-2" to="/register">
-                    Crear cuenta
-                  </NavLink>
-                </li>
-              </>
-            ) : (
-              <li className="nav-item">
-                <button onClick={logout} className="btn btn-soft btn-sm">
-                  <i className="bi bi-box-arrow-right me-1"></i> Salir
-                </button>
-              </li>
-            )}
-          </ul>
+        <div className="d-flex align-items-center gap-2">
+          {user ? (
+            <>
+              <span className="text-muted small">{label}</span>
+              <button className="btn btn-brand btn-sm" onClick={logout}>Salir</button>
+            </>
+          ) : (
+            <>
+              <Link className="btn btn-soft btn-sm" to="/login">Entrar</Link>
+              <Link className="btn btn-brand btn-sm" to="/register">Crear cuenta</Link>
+            </>
+          )}
         </div>
       </div>
     </nav>
