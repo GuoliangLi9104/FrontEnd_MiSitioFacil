@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import PublishButton from '../components/PublishButton.jsx'
+import ImagePicker from '../components/ImagePicker.jsx'
 import { buildPublicUrl } from '../utils/host'
 
 const TEMPLATES = [
@@ -37,14 +38,17 @@ export default function CreatePage(){
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState('')
 
+  // estado por servicio para el botón Guardar
+  // svcStatus[key] = { saving: bool, saved: bool, error: string|null }
+  const [svcStatus, setSvcStatus] = useState({})
+
   // ------------ LOAD (editar) ------------
   useEffect(() => {
     (async () => {
       if (!businessId) return
       try {
-        // Obtenemos “mis negocios” y localizamos el que vamos a editar
         const mine = await api.listMyBusinesses()
-        const items = mine?.items || mine?.data?.businesses || []
+        const items = mine?.items || mine?.data?.businesses || mine?.data || []
         const found = items.find(x => (x._id || x.id) === businessId)
         if (found) {
           setForm(f => ({
@@ -59,17 +63,16 @@ export default function CreatePage(){
             facebook: found.facebook || '',
             website: found.website || '',
             templateKey: found.templateKey || found.templateId || TEMPLATES[0].key,
-            coverUrl: found.coverUrl || ''
+            coverUrl: found.coverUrl || found?.coverImage?.url || ''
           }))
           if (found.operatingHours) setHours(h => ({ ...h, ...found.operatingHours }))
-          // Si tu API te devuelve servicios, mapéalos aquí:
           if (Array.isArray(found.services)) {
             setServices(found.services.map(s => ({
-              _id: s._id,
+              _id: s._id || s.id,
               title: s.title || s.name || '',
               description: s.description || '',
-              price: Number(s.price || 0),
-              durationMin: Number(s.durationMin || s.duration || 30)
+              price: Number(s.price ?? s?.pricing?.basePrice ?? 0),
+              durationMin: Number(s.durationMin ?? s.duration ?? 30)
             })))
           }
         }
@@ -94,14 +97,170 @@ export default function CreatePage(){
       next[idx] = { ...next[idx], [key]: key==='price'||key==='durationMin' ? Number(val||0) : val }
       return next
     })
+    // reinicia estado visual si edita
+    setSvcStatus(prev => {
+      const keyId = services[idx]?._id || services[idx]?.tempId || idx
+      const curr = prev[keyId] || {}
+      return { ...prev, [keyId]: { ...curr, saved: false, error: null } }
+    })
   }
-  const removeService = (idx) => setServices(list => list.filter((_,i) => i!==idx))
+  const removeService = (idx) => {
+    const keyId = services[idx]?._id || services[idx]?.tempId || idx
+    setServices(list => list.filter((_,i) => i!==idx))
+    setSvcStatus(prev => {
+      const cp = { ...prev }
+      delete cp[keyId]
+      return cp
+    })
+  }
 
   // ------------ HOURS ------------
   const toggleDay = (day) => setHours(h => ({ ...h, [day]: { ...h[day], isOpen: !h[day].isOpen } }))
   const setTime = (day, which, val) => setHours(h => ({ ...h, [day]: { ...h[day], [which]: val } }))
 
-  // ------------ SUBMIT (create/update) ------------
+  // ------------ Guardar servicio (POST/PUT individual) ------------
+  const isServiceReady = (s) =>
+    String(s.title || '').trim().length > 0 &&
+    Number.isFinite(Number(s.price)) &&
+    Number(s.price) >= 0 &&
+    Number(s.durationMin) >= 15 && Number(s.durationMin) % 15 === 0
+
+  const saveService = async (idx) => {
+    const s = services[idx]
+    if (!s) return
+    const keyId = s._id || s.tempId || idx
+
+    if (!isServiceReady(s)) {
+      setSvcStatus(prev => ({ ...prev, [keyId]: { saving: false, saved: false, error: 'Completa título, precio (≥ 0) y duración (múltiplos de 15).' } }))
+      return
+    }
+    if (!businessId) {
+      setSvcStatus(prev => ({ ...prev, [keyId]: { saving: false, saved: false, error: 'Primero guarda el negocio para obtener su ID.' } }))
+      return
+    }
+
+    setSvcStatus(prev => ({ ...prev, [keyId]: { saving: true, saved: false, error: null } }))
+
+    try {
+      let resp
+      if (s._id) {
+        // actualizar
+        resp = await api.updateService(s._id, {
+          title: s.title,
+          description: s.description,
+          price: s.price,
+          durationMin: s.durationMin
+        })
+      } else {
+        // crear
+        resp = await api.createService(businessId, {
+          title: s.title,
+          description: s.description,
+          price: s.price,
+          durationMin: s.durationMin
+        })
+      }
+
+      const newId =
+        resp?.data?.service?._id ||
+        resp?.data?.service?.id ||
+        resp?.service?._id ||
+        resp?.service?.id ||
+        s._id || keyId
+
+      // sincroniza _id devuelto
+      setServices(list => {
+        const next = list.slice()
+        next[idx] = { ...next[idx], _id: newId }
+        return next
+      })
+
+      setSvcStatus(prev => ({ ...prev, [newId]: { saving: false, saved: true, error: null } }))
+      if (newId !== keyId) {
+        setSvcStatus(prev => {
+          const cp = { ...prev }
+          delete cp[keyId]
+          return cp
+        })
+      }
+    } catch (e) {
+      setSvcStatus(prev => ({ ...prev, [keyId]: { saving: false, saved: false, error: e?.message || 'Error al guardar el servicio.' } }))
+    }
+  }
+
+  // ------------ Guardar SOLO el negocio (imagen + plantilla + básicos) ------------
+  const saveBusinessOnly = async () => {
+    setLoading(true)
+    setMsg('')
+    try {
+      if (!form.name || !form.slug) {
+        setMsg('Nombre y subdominio (slug) son obligatorios')
+        setLoading(false)
+        return
+      }
+
+      const payload = {
+        name: form.name.trim(),
+        slug: slugify(form.slug || form.name),
+        category: form.category || '',
+        description: form.description || '',
+        phone: form.phone || '',
+        address: form.address || '',
+        instagram: form.instagram || '',
+        facebook: form.facebook || '',
+        website: form.website || '',
+        templateKey: form.templateKey,
+        coverUrl: form.coverUrl || ''
+        // NO enviamos horarios ni servicios aquí
+      }
+
+      let id = businessId
+
+      if (id) {
+        await api.updateBusiness(id, payload)
+        setMsg('✅ Negocio actualizado.')
+      } else {
+        const created = await api.createBusiness(payload)
+
+        // Intentamos obtener el id de varias formas posibles
+        id =
+          created?.item?._id ||
+          created?.data?.business?._id ||
+          created?.data?.id ||
+          created?.data?._id ||
+          created?._id ||
+          created?.id ||
+          created?.businessId ||
+          null
+
+        // Si no llegó el id, lo resolvemos buscando por slug en "mis negocios"
+        if (!id) {
+          try {
+            const mine = await api.listMyBusinesses()
+            const items = mine?.items || mine?.data?.businesses || mine?.data || []
+            const found = items.find(b => (b.slug || b?.business?.slug || '').toLowerCase() === slugify(payload.slug))
+            id = found?._id || found?.id || null
+          } catch { /* noop */ }
+        }
+
+        if (id) {
+          setBusinessId(id)
+          // Fijamos el id en la URL para persistirlo
+          try {
+            navigate(`/create?id=${encodeURIComponent(id)}`, { replace: true })
+          } catch { /* noop */ }
+        }
+
+        setMsg('✅ Negocio creado. Ya puedes agregar servicios y horario.')
+      }
+    } catch (e) {
+      setMsg(e?.message || '❌ Error guardando el negocio.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ------------ Guardar TODO (incluye horario + listado actual) ------------
   const submit = async (e) => {
     e.preventDefault()
     setLoading(true); setMsg('')
@@ -122,12 +281,11 @@ export default function CreatePage(){
         coverUrl: form.coverUrl || '',
         operatingHours: hours,
         services: services.map(s => ({
-          // El backend puede mapear title->name y durationMin->duration
           title: (s.title || '').trim(),
           description: (s.description || '').trim(),
           price: Number(s.price || 0),
           durationMin: Number(s.durationMin || 30),
-          _id: s._id // si existe, sirve para “update” en backend
+          _id: s._id
         }))
       }
 
@@ -136,8 +294,11 @@ export default function CreatePage(){
         setMsg('Cambios guardados.')
       } else {
         const created = await api.createBusiness(payload)
-        const newId = created?.item?._id || created?._id || created?.id || created?.businessId
-        if (newId) setBusinessId(newId)
+        const newId = created?.item?._id || created?.data?.business?._id || created?._id || created?.id || created?.businessId
+        if (newId) {
+          setBusinessId(newId)
+          try { navigate(`/create?id=${encodeURIComponent(newId)}`, { replace: true }) } catch {}
+        }
         setMsg('Página creada.')
       }
     } catch (e) {
@@ -199,6 +360,19 @@ export default function CreatePage(){
               <label className="form-label">Descripción</label>
               <textarea name="description" className="form-control" rows="3" value={form.description} onChange={onChange} />
             </div>
+
+            {/* Imagen de portada */}
+            <div className="col-12">
+              <label className="form-label">Imagen de portada</label>
+              <ImagePicker
+                value={form.coverUrl}
+                onChange={(val) => setForm(f => ({ ...f, coverUrl: val }))}
+                maxW={1600}
+                maxH={900}
+                maxMB={5}
+              />
+              <div className="form-text">Formatos recomendados: JPG/PNG. Relación aprox. 16:9.</div>
+            </div>
           </div>
         </section>
 
@@ -221,6 +395,23 @@ export default function CreatePage(){
           </div>
         </section>
 
+        {/* --- Botón: Guardar solo negocio (justo después de Plantilla) --- */}
+        <section className="card p-3">
+          <div className="d-flex justify-content-between align-items-center">
+            <div className="text-muted small">
+              Guarda el negocio con su imagen y plantilla. Luego podrás añadir servicios y horario.
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline-primary"
+              onClick={saveBusinessOnly}
+              disabled={loading}
+            >
+              {loading ? 'Guardando…' : (businessId ? 'Guardar negocio' : 'Crear negocio')}
+            </button>
+          </div>
+        </section>
+
         {/* --- Servicios --- */}
         <section className="card p-3">
           <div className="d-flex justify-content-between align-items-center mb-2">
@@ -231,31 +422,71 @@ export default function CreatePage(){
           </div>
           {services.length === 0 && <div className="text-muted">Aún no has añadido servicios.</div>}
           <div className="vstack gap-2">
-            {services.map((s, idx) => (
-              <div key={s._id || s.tempId || idx} className="row g-2 align-items-end">
-                <div className="col-md-3">
-                  <label className="form-label">Título</label>
-                  <input className="form-control" value={s.title} onChange={e=>updateService(idx,'title',e.target.value)} placeholder="Corte clásico" />
+            {services.map((s, idx) => {
+              const keyId = s._id || s.tempId || idx
+              const st = svcStatus[keyId] || { saving: false, saved: false, error: null }
+              const disabled = !businessId || !isServiceReady(s) || st.saving
+              return (
+                <div key={keyId} className="row g-2 align-items-end">
+                  <div className="col-md-3">
+                    <label className="form-label">Título</label>
+                    <input className="form-control" value={s.title} onChange={e=>updateService(idx,'title',e.target.value)} placeholder="Corte clásico" />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">Precio</label>
+                    <input type="number" className="form-control" value={s.price} onChange={e=>updateService(idx,'price',e.target.value)} min="0" />
+                  </div>
+                  <div className="col-md-2">
+                    <label className="form-label">Duración (min)</label>
+                    <input type="number" className="form-control" value={s.durationMin} onChange={e=>updateService(idx,'durationMin',e.target.value)} min="15" step="15" />
+                  </div>
+                  <div className="col-md-3">
+                    <label className="form-label">Descripción</label>
+                    <input className="form-control" value={s.description} onChange={e=>updateService(idx,'description',e.target.value)} placeholder="Tijera y máquina" />
+                  </div>
+
+                  <div className="col-md-2 d-flex gap-2">
+                    {/* Guardar */}
+                    <button
+                      type="button"
+                      className="btn btn-primary flex-fill"
+                      onClick={()=>saveService(idx)}
+                      disabled={disabled}
+                      title={businessId ? (isServiceReady(s) ? 'Guardar este servicio' : 'Completa título, precio y duración (múltiplos de 15)') : 'Primero guarda el negocio'}
+                    >
+                      {st.saving ? (
+                        <>
+                          <i className="bi bi-arrow-repeat me-1" /> Guardando…
+                        </>
+                      ) : st.saved ? (
+                        <>
+                          <i className="bi bi-check2-circle me-1" /> Guardado
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-cloud-upload me-1" /> Guardar
+                        </>
+                      )}
+                    </button>
+
+                    {/* Eliminar */}
+                    <button type="button" className="btn btn-outline-danger" onClick={()=>removeService(idx)}>
+                      <i className="bi bi-trash" />
+                    </button>
+                  </div>
+
+                  {/* Estado de error debajo, si aplica */}
+                  {st.error && (
+                    <div className="col-12">
+                      <div className="text-danger small">
+                        <i className="bi bi-exclamation-triangle me-1" />
+                        {st.error}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="col-md-2">
-                  <label className="form-label">Precio</label>
-                  <input type="number" className="form-control" value={s.price} onChange={e=>updateService(idx,'price',e.target.value)} min="0" />
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Duración (min)</label>
-                  <input type="number" className="form-control" value={s.durationMin} onChange={e=>updateService(idx,'durationMin',e.target.value)} min="5" step="5" />
-                </div>
-                <div className="col-md-4">
-                  <label className="form-label">Descripción</label>
-                  <input className="form-control" value={s.description} onChange={e=>updateService(idx,'description',e.target.value)} placeholder="Tijera y máquina" />
-                </div>
-                <div className="col-md-1">
-                  <button type="button" className="btn btn-outline-danger w-100" onClick={()=>removeService(idx)}>
-                    <i className="bi bi-trash" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </section>
 
@@ -293,10 +524,12 @@ export default function CreatePage(){
         </section>
 
         {/* --- Acciones --- */}
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          {/* Botón global para guardar TODO */}
           <button className="btn btn-primary" disabled={loading}>
-            {loading ? (businessId ? 'Guardando…' : 'Creando…') : (businessId ? 'Guardar cambios' : 'Crear página')}
+            {loading ? (businessId ? 'Guardando…' : 'Creando…') : (businessId ? 'Guardar TODO' : 'Crear página completa')}
           </button>
+
           {form.slug && <PublishButton slug={form.slug} openAfter />}
           <button type="button" className="btn btn-soft" onClick={()=>navigate('/')}>Volver</button>
         </div>

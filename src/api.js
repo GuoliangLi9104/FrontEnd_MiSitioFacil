@@ -41,7 +41,8 @@ async function http(
       baseHeaders["Content-Type"] || "application/json";
   }
 
-  const { token } = getAuthInfo() || {};
+  const info = getAuthInfo() || {};
+  const token = info.token;
   if (auth && token) {
     baseHeaders["Authorization"] = `Bearer ${token}`;
   }
@@ -91,10 +92,10 @@ function _normalizeSite(obj, slugFallback = "") {
       instagram: business.instagram || "",
       facebook: business.facebook || "",
       coverUrl: business.coverUrl || "",
-      // 👇 añadimos soporte de horario en el draft/normalize
+      // horario soportado en el draft/normalize
       operatingHours:
         business.operatingHours ||
-        business.openingHours || // fallback si tu UI usa "openingHours"
+        business.openingHours ||
         {},
     },
     services: services.map((s) => ({
@@ -176,11 +177,6 @@ const filterServicesRespectingSelection = (services = []) =>
 // ===================================================
 export const api = {
   // ---------- AUTH ----------
-  /**
-   * register: acepta ambos escenarios
-   *  - BE devuelve {201, user}  → NO token → vuelves al login
-   *  - BE devuelve {201, token, user} → te deja iniciado
-   */
   async register({ name, fullName, email, password }) {
     const realName =
       name || fullName || (email ? email.split("@")[0] : "Usuario");
@@ -189,7 +185,7 @@ export const api = {
       const rsp = await http("/auth/register", {
         method: "POST",
         body: { fullName: realName, email, password },
-        auth: false, // no Authorization ni aunque haya token previo
+        auth: false,
       });
 
       const token = rsp?.token ?? rsp?.data?.token ?? null;
@@ -202,7 +198,6 @@ export const api = {
         return { ok: true, token, user, source: "backend", autoLogged: true };
       }
 
-      // Registro correcto sin token → se espera login manual
       return {
         ok: true,
         user: backendUser || { fullName: realName, email, role: "owner" },
@@ -277,25 +272,26 @@ export const api = {
   async me() {
     if (BACKEND_CONFIGURED) {
       const rsp = await http("/auth/me", { method: "GET", auth: true });
-      const { token } = getAuthInfo();
+      const info = getAuthInfo() || {};
+      const token = info.token;
       if (token && rsp?.user) setAuthInfo(token, rsp.user);
       return rsp;
     }
-    const { user } = getAuthInfo();
+    const { user } = getAuthInfo() || {};
     return { ok: !!user, user, source: "local" };
   },
 
   // ---------- BUSINESS ----------
   async createBusiness(payload) {
     const nslug = norm(payload.slug || payload.name || `negocio-${Date.now()}`);
-    // 👇 aceptamos operatingHours y también openingHours desde la UI
+    // aceptamos operatingHours y también openingHours desde la UI
     const operatingHours =
       payload.operatingHours || payload.openingHours || undefined;
 
     const body = {
       ...payload,
       slug: nslug,
-      ...(operatingHours ? { operatingHours } : {}), // lo enviamos si existe
+      ...(operatingHours ? { operatingHours } : {}),
     };
 
     if (BACKEND_CONFIGURED) {
@@ -330,26 +326,23 @@ export const api = {
     return { ok: true, id, slug: nslug, ...draft.business, source: "local" };
   },
 
-  // 🔹 listar SOLO mis negocios (owner)
+  // listar SOLO mis negocios (owner)
   async listMyBusinesses() {
     if (BACKEND_CONFIGURED) {
-      // el backend devuelve { success, data: [...] }
       return await http("/business", { method: "GET", auth: true });
     }
-    // Fallback demo: lista localStorage
     return { items: listLocalSites() };
   },
 
-  // 🔹 listar TODOS (admin)
+  // listar TODOS (admin)
   async listAllBusinesses() {
     if (BACKEND_CONFIGURED) {
       return await http("/business?all=1", { method: "GET", auth: true });
     }
-    // Fallback demo: usa lo mismo que local
     return { items: listLocalSites() };
   },
 
-  // 🔹 actualizar negocio
+  // actualizar negocio
   async updateBusiness(id, payload) {
     // mapeamos openingHours → operatingHours si la UI manda así
     const patch = {
@@ -366,7 +359,7 @@ export const api = {
         auth: true,
       });
     }
-    // Fallback demo (best-effort): si existe draft, lo parchea
+    // Fallback demo (best-effort)
     const slug = norm(patch?.slug);
     if (slug) {
       const d = loadDraft(slug) || { business: { slug }, services: [] };
@@ -377,7 +370,7 @@ export const api = {
     return { ok: false, message: "Sin backend y sin slug para actualizar" };
   },
 
-  // 🔹 eliminar negocio
+  // eliminar negocio
   async deleteBusiness(id) {
     if (BACKEND_CONFIGURED) {
       return await http(`/business/${encodeURIComponent(id)}`, {
@@ -385,7 +378,6 @@ export const api = {
         auth: true,
       });
     }
-    // Fallback demo: intenta borrar por slug en el índice
     try {
       const idx = JSON.parse(localStorage.getItem(bizIdxKey) || "[]");
       const rest = idx.filter((x) => x.id !== id);
@@ -396,7 +388,7 @@ export const api = {
     }
   },
 
-  // 🔹 activar / desactivar (solo admin)
+  // activar / desactivar (solo admin)
   async setBusinessStatus(id, enabled) {
     if (BACKEND_CONFIGURED) {
       return await http(`/business/${encodeURIComponent(id)}/status`, {
@@ -405,8 +397,74 @@ export const api = {
         auth: true,
       });
     }
-    // Fallback demo: sin efecto real
     return { ok: true, source: "local", noop: true };
+  },
+
+  // ---------- SERVICES (nuevo) ----------
+  /**
+   * Crea un servicio en un negocio.
+   * Backend: POST /services/business/:businessId
+   * Acepta: title|name, description, category, price, durationMin
+   */
+  async createService(businessId, payload) {
+    const body = {
+      title: payload.title,
+      name: payload.title, // por si el backend usa name
+      description: payload.description || "",
+      category: payload.category || "general",
+      price: Number(payload.price),
+      durationMin: Number(payload.durationMin),
+      isActive: payload.isActive ?? true,
+      isPublic: payload.isPublic ?? true,
+      // opcional: tags, requirements...
+    };
+
+    const rsp = await http(
+      `/services/business/${encodeURIComponent(businessId)}`,
+      { method: "POST", body, auth: true }
+    );
+    return rsp; // { success, data:{ service } }
+  },
+
+  /**
+   * Actualiza un servicio existente.
+   * Backend: PUT /services/:serviceId
+   * Acepta: title|name, description, category, price, duration|durationMin
+   */
+  async updateService(serviceId, payload) {
+    const body = {
+      title: payload.title,
+      name: payload.title, // aseguramos nombre
+      description: payload.description || "",
+      category: payload.category || "general",
+      price: Number(payload.price),
+      // el backend acepta duration o durationMin; enviamos ambos
+      duration: Number(payload.duration ?? payload.durationMin),
+      durationMin: Number(payload.durationMin ?? payload.duration),
+      isActive: payload.isActive ?? true,
+      isPublic: payload.isPublic ?? true,
+      tags: payload.tags,
+      requirements: payload.requirements,
+    };
+
+    const rsp = await http(`/services/${encodeURIComponent(serviceId)}`, {
+      method: "PUT",
+      body,
+      auth: true,
+    });
+    return rsp; // { success, data:{ service } }
+  },
+
+  /**
+   * (Opcional) Listar servicios de un negocio
+   * Backend: GET /services/business/:businessId
+   */
+  async getBusinessServices(businessId, params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    const path = `/services/business/${encodeURIComponent(businessId)}${
+      qs ? `?${qs}` : ""
+    }`;
+    return await http(path, { method: "GET", auth: true });
   },
 
   // ---------- PING ----------
@@ -423,7 +481,7 @@ export const api = {
   async getPublicSite(slug) {
     const nslug = norm(slug);
     if (BACKEND_CONFIGURED) {
-      // Ajustado al backend: usamos /templates/:slug (antes /site/:slug)
+      // Backend público por slug de templates
       const r = await http(`/templates/${encodeURIComponent(nslug)}`, {
         method: "GET",
         auth: false,
@@ -470,7 +528,6 @@ export const api = {
         instagram: true,
         facebook: true,
         coverUrl: true,
-        // 👇 añadimos operatingHours para publicar horario
         operatingHours: true,
         ...(opts.fields || {}),
       };
@@ -482,9 +539,7 @@ export const api = {
           .map(([k]) => k),
       ];
 
-      // Tomamos los datos del borrador local
       const businessDraft = draft.business || {};
-      // Aceptamos openingHours en el borrador y lo mapeamos
       const operatingHours =
         businessDraft.operatingHours || businessDraft.openingHours || undefined;
 
@@ -505,12 +560,10 @@ export const api = {
       const payload = {
         business,
         services: services.map((s) =>
-          // ← EXACTAMENTE lo que espera el backend; allí se transforma a pricing, etc.
           pick(s, ["serviceId", "title", "description", "price", "durationMin"])
         ),
       };
 
-      // Backend publica y actualiza negocio/servicios
       const res = await http("/templates/publish", {
         method: "POST",
         body: payload,
@@ -542,7 +595,6 @@ export const api = {
         "instagram",
         "facebook",
         "coverUrl",
-        // guardamos horario también en modo local
         "operatingHours",
       ]),
       services: services.map((s) =>
@@ -557,7 +609,6 @@ export const api = {
   async createBooking(slug, payload) {
     const nslug = norm(slug);
     if (BACKEND_CONFIGURED) {
-      // Ajuste al naming del backend: normalmente '/reservations'
       const res = await http("/reservations", {
         method: "POST",
         body: { slug: nslug, ...payload },

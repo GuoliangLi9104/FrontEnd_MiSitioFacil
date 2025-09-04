@@ -5,6 +5,7 @@ import { Routes, Route } from 'react-router-dom'
 import Navbar from './components/navbar.jsx'
 import Footer from './components/footer.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
+import PublicSite from './pages/publicsite.jsx' // 👈 Asegúrate de importarlo
 
 import Home from './pages/home.jsx'
 import Login from './pages/login.jsx'
@@ -28,7 +29,7 @@ export default function App() {
       if (!mounted) return
       setBackendStatus(
         r.ok && r.backend
-          ? { checked:true, ok:true, msg:'Conectado al backend' }
+          ? { checked:true, ok:true, msg:'' }
           : { checked:true, ok:false, msg: r.message || 'Sin conexión al backend' }
       )
     }
@@ -52,7 +53,7 @@ export default function App() {
             role="status"
             aria-live="polite"
           >
-            {backendStatus.ok ? '✅ ' : '⚠️ '}{backendStatus.msg}
+            {backendStatus.ok ? '✅ ' : '⚠ '}{backendStatus.msg}
           </div>
         </div>
       )}
@@ -64,6 +65,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+             <Route path="/site/:slug" element={<PublicSite />} /> {/* 👈 ESTA ES CLAVE */}
 
             {/* Privado */}
             <Route
@@ -82,6 +84,6 @@ export default function App() {
       </main>
 
       <Footer />
-    </>
-  )
+    </>
+  )
 }

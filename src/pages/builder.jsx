@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import debounce from 'lodash.debounce'
 import { persist } from '../utils/persist'
 import ImagePicker from '../components/ImagePicker'
+import * as api from '../api'
 
 const empty = {
   business: {
@@ -16,7 +17,7 @@ const empty = {
     website: '',
     instagram: '',
     facebook: '',
-    coverUrl: ''      // <- aquí guardamos la dataURL de portada
+    coverUrl: ''
   },
   services: []
 }
@@ -24,6 +25,10 @@ const empty = {
 export default function Builder() {
   const [model, setModel] = useState(empty)
   const [savedAt, setSavedAt] = useState(null)
+
+  // estado transitorio por servicio para la UI
+  // status[serviceId] = { saving: bool, saved: bool, error: string|null }
+  const [status, setStatus] = useState({})
 
   useEffect(() => {
     const draft = persist.load()
@@ -55,14 +60,17 @@ export default function Builder() {
 
   const addService = () => {
     setModelAndSave((next) => {
+      const id = crypto.randomUUID()
       next.services.push({
-        serviceId: crypto.randomUUID(),
+        serviceId: id,
         title: '',
         description: '',
         price: 0,
         durationMin: 30,
-        imageUrl: ''     // <- imagen opcional por servicio
+        imageUrl: ''
       })
+      // inicializa estado visual
+      setStatus(s => ({ ...s, [id]: { saving: false, saved: false, error: null } }))
     })
   }
 
@@ -71,11 +79,21 @@ export default function Builder() {
       const it = next.services.find(s => s.serviceId === id)
       if (it) it[field] = value
     })
+    // si edita algo luego de “Guardado”, vuelve a “no guardado”
+    setStatus(prev => {
+      const curr = prev[id] || {}
+      return { ...prev, [id]: { ...curr, saved: false, error: null } }
+    })
   }
 
   const removeService = (id) => {
     setModelAndSave((next) => {
       next.services = next.services.filter(s => s.serviceId !== id)
+    })
+    setStatus(prev => {
+      const cp = { ...prev }
+      delete cp[id]
+      return cp
     })
   }
 
@@ -83,9 +101,65 @@ export default function Builder() {
     persist.clear()
     setModel(empty)
     setSavedAt(null)
+    setStatus({})
   }
 
   const { business, services } = model
+
+  // validación mínima para habilitar “Guardar”
+  const isServiceReady = (s) =>
+    String(s.title || '').trim().length > 0 &&
+    Number.isFinite(s.price) &&
+    Number(s.price) >= 0 &&         // coherente con backend (≥ 0)
+    Number(s.durationMin) >= 5
+
+  // acción de guardar/subir un servicio individual (POST)
+  const confirmService = async (serviceId) => {
+    const s = services.find(x => x.serviceId === serviceId)
+    if (!s) return
+    if (!isServiceReady(s)) {
+      setStatus(prev => ({ ...prev, [serviceId]: { saving: false, saved: false, error: 'Completa título y precio (≥ 0).' } }))
+      return
+    }
+    if (!String(business.slug || '').trim()) {
+      setStatus(prev => ({ ...prev, [serviceId]: { saving: false, saved: false, error: 'Define el slug del negocio.' } }))
+      return
+    }
+
+    // marca como “guardando”
+    setStatus(prev => ({ ...prev, [serviceId]: { saving: true, saved: false, error: null } }))
+
+    try {
+      // Llama a la API (ver método en src/api.js)
+      const res = await api.upsertServiceDraft(business.slug.trim().toLowerCase(), {
+        serviceId: s.serviceId,
+        title: s.title,
+        description: s.description,
+        price: Number(s.price),
+        durationMin: Number(s.durationMin),
+        imageUrl: s.imageUrl || ''
+      })
+
+      // si el backend devuelve un id/uuid nuevo, sincronízalo
+      const returnedId = res?.serviceId || res?.id || s.serviceId
+
+      setModelAndSave((next) => {
+        const idx = next.services.findIndex(x => x.serviceId === serviceId)
+        if (idx >= 0) next.services[idx].serviceId = returnedId
+      })
+
+      // marca como “guardado ok”
+      setStatus(prev => ({ ...prev, [returnedId]: { saving: false, saved: true, error: null } }))
+      if (returnedId !== serviceId) {
+        const cp = { ...status }
+        delete cp[serviceId]
+        setStatus(cp)
+      }
+    } catch (err) {
+      const message = err?.message || 'Error al guardar el servicio.'
+      setStatus(prev => ({ ...prev, [serviceId]: { saving: false, saved: false, error: message } }))
+    }
+  }
 
   return (
     <div className="vstack gap-3">
@@ -218,70 +292,107 @@ export default function Builder() {
         )}
 
         <div className="row g-3">
-          {services.map((s) => (
-            <div className="col-12" key={s.serviceId}>
-              <div className="card p-3">
-                <div className="row g-2">
-                  <div className="col-md-4">
-                    <label className="form-label">Título</label>
-                    <input
-                      className="form-control"
-                      value={s.title}
-                      onChange={(e) => updateService(s.serviceId, 'title', e.target.value)}
-                      placeholder="Corte clásico"
-                    />
-                  </div>
-                  <div className="col-md-5">
-                    <label className="form-label">Descripción</label>
-                    <input
-                      className="form-control"
-                      value={s.description}
-                      onChange={(e) => updateService(s.serviceId, 'description', e.target.value)}
-                      placeholder="Detalle breve"
-                    />
-                  </div>
-                  <div className="col-md-2">
-                    <label className="form-label">Precio (₡)</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={s.price}
-                      onChange={(e) => updateService(s.serviceId, 'price', Number(e.target.value))}
-                      min={0}
-                    />
-                  </div>
-                  <div className="col-md-1">
-                    <label className="form-label">Min</label>
-                    <input
-                      type="number"
-                      className="form-control"
-                      value={s.durationMin}
-                      onChange={(e) => updateService(s.serviceId, 'durationMin', Number(e.target.value))}
-                      min={5}
-                    />
+          {services.map((s) => {
+            const st = status[s.serviceId] || { saving: false, saved: false, error: null }
+            return (
+              <div className="col-12" key={s.serviceId}>
+                <div className="card p-3">
+                  <div className="row g-2">
+                    <div className="col-md-4">
+                      <label className="form-label">Título</label>
+                      <input
+                        className="form-control"
+                        value={s.title}
+                        onChange={(e) => updateService(s.serviceId, 'title', e.target.value)}
+                        placeholder="Corte clásico"
+                      />
+                    </div>
+                    <div className="col-md-5">
+                      <label className="form-label">Descripción</label>
+                      <input
+                        className="form-control"
+                        value={s.description}
+                        onChange={(e) => updateService(s.serviceId, 'description', e.target.value)}
+                        placeholder="Detalle breve"
+                      />
+                    </div>
+                    <div className="col-md-2">
+                      <label className="form-label">Precio (₡)</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={s.price}
+                        onChange={(e) => updateService(s.serviceId, 'price', Number(e.target.value))}
+                        min={0}
+                      />
+                    </div>
+                    <div className="col-md-1">
+                      <label className="form-label">Min</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={s.durationMin}
+                        onChange={(e) => updateService(s.serviceId, 'durationMin', Number(e.target.value))}
+                        min={5}
+                      />
+                    </div>
+
+                    {/* Imagen por servicio (opcional) */}
+                    <div className="col-12">
+                      <ImagePicker
+                        label="Imagen del servicio (opcional)"
+                        value={s.imageUrl}
+                        onChange={(val) => updateService(s.serviceId, 'imageUrl', val)}
+                        maxW={1200}
+                        maxH={800}
+                        maxMB={4}
+                      />
+                    </div>
                   </div>
 
-                  {/* Imagen por servicio (opcional) */}
-                  <div className="col-12">
-                    <ImagePicker
-                      label="Imagen del servicio (opcional)"
-                      value={s.imageUrl}
-                      onChange={(val) => updateService(s.serviceId, 'imageUrl', val)}
-                      maxW={1200}
-                      maxH={800}
-                      maxMB={4}
-                    />
-                  </div>
-                </div>
+                  {/* acciones por servicio */}
+                  <div className="d-flex justify-content-end align-items-center gap-2 mt-2">
+                    {/* Estado / error */}
+                    {st.error && (
+                      <span className="text-danger small me-2">
+                        <i className="bi bi-exclamation-triangle me-1" />
+                        {st.error}
+                      </span>
+                    )}
+                    {st.saved && !st.saving && !st.error && (
+                      <span className="text-success small me-2">
+                        <i className="bi bi-check2-circle me-1" />
+                        Guardado
+                      </span>
+                    )}
 
-                <div className="d-flex justify-content-end mt-2">
-                  <button onClick={() => removeService(s.serviceId)} className="btn btn-soft btn-sm">
-                    <i className="bi bi-trash me-1" /> Quitar
-                  </button>
+                    {/* Guardar (POST) */}
+                    <button
+                      onClick={() => confirmService(s.serviceId)}
+                      disabled={!isServiceReady(s) || st.saving}
+                      className="btn btn-primary btn-sm"
+                      title={isServiceReady(s) ? 'Guardar este servicio en la base de datos' : 'Completa título y precio'}
+                    >
+                      {st.saving ? (
+                        <>
+                          <i className="bi bi-arrow-repeat me-1" /> Guardando…
+                        </>
+                      ) : (
+                        <>
+                          <i className="bi bi-cloud-upload me-1" /> Guardar
+                        </>
+                      )}
+                    </button>
+
+                    {/* Quitar */}
+                    <button onClick={() => removeService(s.serviceId)} className="btn btn-soft btn-sm">
+                      <i className="bi bi-trash me-1" /> Quitar
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
